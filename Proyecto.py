@@ -86,92 +86,105 @@ cv2.destroyAllWindows()
 
 ######################################################################
 
-# reconocimiento.py
+# entrenamiento_basura.py
 import numpy as np
 import cv2
-
-nombres_clases = ["circulo", "X", "T"]
-w = np.load("pesos_w.npy")
-b = np.load("pesos_b.npy")
+import os
 
 def extraer_caracteristicas(img):
     gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gris = cv2.resize(gris, (50, 50))
     _, binaria = cv2.threshold(gris, 127, 1, cv2.THRESH_BINARY_INV)
+
     densidad = binaria.mean()
     simetria_v = np.abs(binaria[:, :25] - np.fliplr(binaria[:, 25:])).mean()
-    return np.array([densidad, simetria_v])
+    intensidad = gris.mean() / 255.0  # valor normalizado de intensidad
 
-# Ruta de la imagen que dibujaste en Paint
-ruta = "./imagenes/pruebacirculo.png"
-img = cv2.imread(ruta)
+    return np.array([densidad, simetria_v, intensidad])
 
-if img is not None:
-    x = extraer_caracteristicas(img)
-    scores = [np.dot(wi, x) + bi for wi, bi in zip(w, b)]
-    pred = np.argmax(scores)
-    etiqueta = nombres_clases[pred]
+X = []
+Y = []
 
-    # Mostrar el resultado sobre la imagen
-    img_mostrar = cv2.resize(img, (300, 300))
-    cv2.putText(img_mostrar, f"Figura: {etiqueta}", (10, 40),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 2)
-    cv2.imshow("Resultado", img_mostrar)
-    print(f"🔍 La imagen fue clasificada como: {etiqueta}")
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-else:
-    print("⚠️ No se pudo leer la imagen de prueba. Asegúrate de guardarla como prueba.png en la carpeta /imagenes/")
+# Leer imágenes de basura orgánica (clase 0)
+carpeta_org = "./dataset/organico"
+for nombre in os.listdir(carpeta_org):
+    ruta = os.path.join(carpeta_org, nombre)
+    img = cv2.imread(ruta)
+    if img is not None:
+        X.append(extraer_caracteristicas(img))
+        Y.append(0)
+
+# Leer imágenes de basura inorgánica (clase 1)
+carpeta_inorg = "./dataset/inorganico"
+for nombre in os.listdir(carpeta_inorg):
+    ruta = os.path.join(carpeta_inorg, nombre)
+    img = cv2.imread(ruta)
+    if img is not None:
+        X.append(extraer_caracteristicas(img))
+        Y.append(1)
+
+X = np.array(X)
+Y = np.array(Y)
+
+# Inicializar pesos
+w = np.random.uniform(-1, 1, size=3)
+b = np.random.uniform(-1, 1)
+tasa = 0.01
+epocas = 100
+
+# Entrenar perceptrón binario
+for epoca in range(epocas):
+    for i in range(len(X)):
+        z = np.dot(w, X[i]) + b
+        pred = 1 if z > 0 else 0
+        error = Y[i] - pred
+        w += tasa * error * X[i]
+        b += tasa * error
+
+# Guardar pesos
+np.save("pesos_basura_w.npy", w)
+np.save("pesos_basura_b.npy", b)
+print("✅ Entrenamiento completado y pesos guardados.")
 
 
 
 ##################################################################################################
-# entrenamiento.py
+
+
+# reconocimiento_basura.py
 import numpy as np
 import cv2
-import os
 
-nombres_clases = ["circulo", "X", "T"]
-personas = []
-clases = []
+w = np.load("pesos_basura_w.npy")
+b = np.load("pesos_basura_b.npy")
 
-for i, clase in enumerate(nombres_clases):
-    for j in range(1, 4):  # SE AJUSTA SEGUN LAS IMAGENES QUE SE TENGAN POR CLASE, (CLASE: CIRCULO, X, T)
-        ruta = f"./imagenes/pruebacirculo.png"
-        if os.path.exists(ruta):
-            img = cv2.imread(ruta)
-            gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            gris = cv2.resize(gris, (50, 50))
-            _, binaria = cv2.threshold(gris, 127, 1, cv2.THRESH_BINARY_INV)
+def extraer_caracteristicas(img):
+    gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gris = cv2.resize(gris, (50, 50))
+    _, binaria = cv2.threshold(gris, 127, 1, cv2.THRESH_BINARY_INV)
 
-            densidad = binaria.mean()
-            simetria_v = np.abs(binaria[:, :25] - np.fliplr(binaria[:, 25:])).mean()
-            personas.append(np.array([densidad, simetria_v]))
-            clases.append(i)
-        else:
-            print(f"⚠️ Imagen no encontrada: {ruta}")
+    densidad = binaria.mean()
+    simetria_v = np.abs(binaria[:, :25] - np.fliplr(binaria[:, 25:])).mean()
+    intensidad = gris.mean() / 255.0
 
-personas = np.array(personas)
-clases = np.array(clases)
+    return np.array([densidad, simetria_v, intensidad])
 
-num_clases = len(nombres_clases)
-w = np.random.uniform(-1, 1, size=(num_clases, 2))
-b = np.random.uniform(-1, 1, size=num_clases)
+# Ruta de la imagen de prueba
+ruta = "./dataset/prueba.png"
+img = cv2.imread(ruta)
 
-epocas = 100
-tasa = 0.01
+if img is not None:
+    x = extraer_caracteristicas(img)
+    z = np.dot(w, x) + b
+    pred = 1 if z > 0 else 0
+    etiqueta = "INORGÁNICO" if pred == 1 else "ORGÁNICO"
 
-for epoca in range(epocas):
-    for i in range(len(personas)):
-        x = personas[i]
-        y = clases[i]
-        for c in range(num_clases):
-            y_bin = 1 if y == c else 0
-            pred = 1 if np.dot(w[c], x) + b[c] > 0 else 0
-            error = y_bin - pred
-            w[c] += tasa * error * x
-            b[c] += tasa * error
-
-np.save("pesos_w.npy", w)
-np.save("pesos_b.npy", b)
-print("✅ Entrenamiento completo. Pesos guardados.")
+    img_mostrar = cv2.resize(img, (300, 300))
+    cv2.putText(img_mostrar, f"Clasificado: {etiqueta}", (10, 40),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+    cv2.imshow("Resultado", img_mostrar)
+    print(f"🔍 Resultado: {etiqueta}")
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+else:
+    print("⚠️ Imagen de prueba no encontrada. Asegúrate de guardar 'prueba.png' en la carpeta /dataset")
